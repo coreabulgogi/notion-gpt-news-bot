@@ -1,0 +1,28 @@
+name: Daily News Summary to Notion
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # 매일 오전 9시 실행 (UTC 기준)
+  workflow_dispatch:     # 수동 실행도 허용
+
+jobs:
+  news-summary:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install openai requests python-dotenv
+
+      - name: Run news summary script
+        run: python main.py
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DB_ID: ${{ secrets.NOTION_DB_ID }}
