@@ -1,79 +1,82 @@
 import os
 import requests
-import openai
+from bs4 import BeautifulSoup
 from datetime import datetime
+from notion_client import Client as NotionClient
+from openai import OpenAI
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv()  # GitHub Actions에서는 필요 없지만 로컬 테스트 시 사용
 
-# Secret 환경변수 가져오기
-openai.api_key = os.getenv("OPENAI_API_KEY")
-NOTION_TOKEN = os.getenv("NOTION_TOKEN")
-NOTION_DB_ID = os.getenv("NOTION_DB_ID")
+# GPT 요약 함수
+def summarize_news(news_text):
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# ✅ 1. 뉴스 가져오기 (예: 연합뉴스 RSS)
-def get_news():
-    rss_url = "https://www.yonhapnewstv.co.kr/browse/feed/"
-    response = requests.get(rss_url)
-    if response.status_code != 200:
-        raise Exception("뉴스를 불러오지 못했습니다.")
-
-    from xml.etree import ElementTree as ET
-    root = ET.fromstring(response.content)
-    items = root.findall(".//item")
-    news_list = []
-    for item in items[:3]:  # 상위 3개만
-        title = item.find("title").text
-        description = item.find("description").text
-        link = item.find("link").text
-        news_list.append(f"제목: {title}\n요약: {description}\n링크: {link}\n")
-    return "\n\n".join(news_list)
-
-# ✅ 2. GPT 요약
-def summarize_news(news_content):
-    prompt = f"""
-다음은 오늘의 뉴스 목록입니다. 각 뉴스 항목을 2줄 이내로 간결하게 요약하고, 핵심 내용을 정리해주세요:
-
-{news_content}
-"""
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-4",
-        messages=[{"role": "user", "content": prompt}]
+        messages=[
+            {"role": "system", "content": "당신은 유능한 뉴스 요약 전문가입니다. 주어진 기사를 간결하고 명확하게 요약해주세요."},
+            {"role": "user", "content": news_text}
+        ],
+        temperature=0.7
     )
-    return response.choices[0].message["content"].strip()
 
-# ✅ 3. Notion에 저장
-def save_to_notion(summary):
-    url = "https://api.notion.com/v1/pages"
-    headers = {
-        "Authorization": f"Bearer {NOTION_TOKEN}",
-        "Notion-Version": "2022-06-28",
-        "Content-Type": "application/json"
-    }
-    data = {
-        "parent": {"database_id": NOTION_DB_ID},
-        "properties": {
-            "Name": {
-                "title": [{"text": {"content": f"📰 뉴스 요약 - {datetime.now().strftime('%Y-%m-%d')}"}}]
-            },
-            "내용": {
-                "rich_text": [{"text": {"content": summary}}]
-            }
+    return response.choices[0].message.content.strip()
+
+
+# 뉴스 크롤링 함수 (IT 동아 예시)
+def fetch_news():
+    url = "https://it.donga.com/"
+    response = requests.get(url)
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    # 기사 제목 + 본문 링크 수집
+    articles = soup.select("div.articleList div.articleList-title a")
+    if not articles:
+        raise Exception("기사를 찾을 수 없습니다.")
+
+    first_article = articles[0]
+    title = first_article.text.strip()
+    link = first_article['href']
+
+    # 기사 본문 가져오기
+    article_response = requests.get(link)
+    article_soup = BeautifulSoup(article_response.text, "html.parser")
+    content = article_soup.select_one("div.article_txt").get_text(strip=True)
+
+    return title, link, content
+
+
+# Notion에 요약 내용 업로드
+def upload_to_notion(title, summary, url):
+    notion = NotionClient(auth=os.getenv("NOTION_TOKEN"))
+    database_id = os.getenv("NOTION_DB_ID")
+
+    today = datetime.today().strftime("%Y-%m-%d")
+
+    notion.pages.create(
+        parent={"database_id": database_id},
+        properties={
+            "날짜": {"date": {"start": today}},
+            "제목": {"title": [{"text": {"content": title}}]},
+            "요약": {"rich_text": [{"text": {"content": summary}}]},
+            "URL": {"url": url}
         }
-    }
-    res = requests.post(url, headers=headers, json=data)
-    if res.status_code != 200:
-        raise Exception(f"Notion 저장 실패: {res.text}")
+    )
 
-# ✅ 실행
-if __name__ == "__main__":
+
+# 메인 실행
+def main():
     print("뉴스 가져오는 중...")
-    news = get_news()
+    title, link, content = fetch_news()
 
     print("GPT로 요약 중...")
-    summary = summarize_news(news)
+    summary = summarize_news(content)
 
-    print("Notion에 저장 중...")
-    save_to_notion(summary)
+    print("Notion에 업로드 중...")
+    upload_to_notion(title, summary, link)
 
     print("완료!")
+
+if __name__ == "__main__":
+    main()
