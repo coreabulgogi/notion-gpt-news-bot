@@ -1,27 +1,33 @@
-name: Daily News Summary to Notion
+name: Daily News Summary to Notion # 워크플로우 이름 (변경 없음)
 
 on:
   schedule:
     - cron: '0 0 * * *'  # 매일 오전 9시 실행 (UTC 기준)
-  workflow_dispatch:     # 수동 실행도 허용
+                        # 한국 시간(KST)으로 오전 9시에 실행하려면 UTC로 0시(자정)에 맞춰야 합니다.
+                        # 즉, UTC 0시 = KST 오전 9시 입니다.
+  workflow_dispatch:     # 수동 실행도 허용 (변경 없음)
 
 jobs:
   news-summary:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v3 # (변경 없음)
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v4 # (변경 없음)
         with:
-          python-version: '3.10'
+          python-version: '3.10' # (변경 없음)
 
       - name: Install dependencies
-        run: pip install openai requests python-dotenv
+        run: |
+          python -m pip install --upgrade pip # pip 최신 버전으로 업데이트
+          pip install -r requirements.txt      # <<< 이 부분이 가장 중요합니다!
+                                               # 이제 모든 필요한 라이브러리가 requirements.txt에서 설치됩니다.
+                                               # 원본 코드의 'pip install openai requests python-dotenv' 대신 이 코드를 사용합니다.
 
       - name: Run news summary script
-        run: python main.py
+        run: python main.py # (변경 없음)
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
