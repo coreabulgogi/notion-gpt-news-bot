@@ -21,77 +21,89 @@ def summarize_news(news_text):
     )
     return response.choices[0].message.content.strip()
 
-# 뉴스 크롤링 함수 (패션비즈 웹사이트에 맞게 재수정)
+# 뉴스 크롤링 함수 (패션비즈 웹사이트에 맞게 재수정 - 동적 클래스 대응)
 def fetch_news():
     url = "https://www.fashionbiz.co.kr/" # URL 변경!
+    print(f"DEBUG: Accessing URL: {url}")
     response = requests.get(url)
     soup = BeautifulSoup(response.text, "html.parser")
 
     # --- 기사 목록 셀렉터 수정 ---
-    # 1단계: '최신 기사' <h3> 태그를 찾습니다.
+    # 동적 클래스에 덜 의존하도록 '최신 기사' heading 다음의 모든 <a> 태그를 찾아 필터링합니다.
+
+    # 1단계: '최신 기사' <h3> 태그를 찾습니다. (이것은 고정 텍스트이므로 비교적 안정적)
     latest_news_heading = soup.find("h3", string="최신 기사") 
     
-   articles = []
-if latest_news_heading:
-    # 2단계: '최신 기사' heading 바로 다음 형제 요소인 div (기사 리스트 컨테이너)를 찾습니다.
-    # 이 div의 클래스명이 계속 변한다면, 클래스를 지정하지 않고 'div'만으로 찾거나,
-    # find_next_sibling()으로 찾은 뒤 그 객체 안에서 다시 탐색해야 합니다.
-    news_list_container = latest_news_heading.find_next_sibling("div")
+    potential_articles = []
+    if latest_news_heading:
+        # 2단계: '최신 기사' heading 바로 다음 형제 요소인 div (기사 리스트 컨테이너)를 찾습니다.
+        # 이 div의 클래스명이 변하더라도 next_sibling으로 위치를 특정할 수 있습니다.
+        news_list_container = latest_news_heading.find_next_sibling("div")
+        
+        if news_list_container:
+            # 3단계: 컨테이너 안에서 모든 <a> 태그 (href 속성을 가진)를 찾습니다.
+            # 이 방식은 'div.sc-53c9553f-0.ksjQKq'와 같은 동적 클래스에 의존하지 않습니다.
+            potential_articles = news_list_container.find_all("a", href=True) 
 
-    if news_list_container:
-        # 3단계: 컨테이너 안에서 각 기사 링크 (<a> 태그)를 찾습니다.
-        # 여기가 가장 중요합니다. 이전에는 "div.sc-53c9553f-0.ksjQKq > a" 로 시도했지만,
-        # 이 클래스가 동적이라면 실패합니다.
+    # DEBUG: 찾은 잠재적 기사 링크 개수를 출력해봅니다. (GitHub Actions 로그에서 확인)
+    print(f"DEBUG: Found {len(potential_articles)} potential <a> tags.")
+    
+    # 4단계: 찾은 <a> 태그들 중에서 실제 기사 링크로 보이는 것만 필터링합니다.
+    # 일반적으로 기사 링크는 특정 패턴을 가집니다 (예: /news/articleView.html?idxno=...)
+    # 패션비즈의 기사 링크가 어떤 패턴을 가지는지 웹사이트에서 확인해봐야 합니다.
+    # 여기서는 간단히 'articleView.html'을 포함하는 링크만 선택하도록 예시를 듭니다.
+    articles = [
+        a for a in potential_articles 
+        if a.get('href') and ('articleView.html' in a['href'] or 'news/' in a['href'])
+    ] # 실제 링크 패턴에 맞게 조정 필요
 
-        # --- 시도 1: 컨테이너 내의 모든 <a> 태그 찾기 (가장 일반적인 방법) ---
-        articles = news_list_container.find_all("a", href=True) 
-
-        # --- 시도 2: 만약 <a> 태그가 어떤 특정 <div class="기사아이템"> 안에 있다면 ---
-        # 개발자 도구로 기사 하나를 클릭해서 가장 바깥쪽을 감싸는 div의 고정된 클래스가 있는지 확인
-        # 예시: articles = news_list_container.select("div.fixed-article-item-class > a")
-
-        # --- 시도 3: <a> 태그가 <p class="tit">과 같은 특정 제목 클래스를 포함한다면 ---
-        # articles = news_list_container.select("a:has(p.tit)") # CSS selector pseudo-class :has() 사용 (BeautifulSoup 4.7+에서 지원)
-        # 또는 각 <a>를 순회하며 내부 요소를 확인 (코드가 복잡해짐)
-
-if not articles:
-    # 이 예외가 발생한다는 것은 위 셀렉터들이 기사를 찾지 못했다는 의미
-    raise Exception("패션비즈 웹사이트에서 기사를 찾을 수 없습니다. '최신 기사' 섹션 또는 기사 셀렉터 확인 필요.")
-
+    if not articles:
+        # 필터링 후에도 기사가 없다면 오류 발생
+        raise Exception("패션비즈 웹사이트에서 기사를 찾을 수 없습니다. '최신 기사' 섹션 또는 기사 셀렉터/링크 패턴 확인 필요.")
 
     first_article = articles[0]
     
     # --- 제목 추출 ---
-    # 이전 캡쳐 (image_5afa60.jpg)에서 'p.tit'으로 추정했었으므로, 일단 이걸 유지합니다.
-    # 만약 안되면, first_article.get_text(strip=True)를 사용해보세요.
+    # <a> 태그 내부에 <p class="tit"> 태그가 있는지 확인하고, 없으면 <a> 태그 전체 텍스트 사용
     title_element = first_article.select_one("p.tit")
     if title_element:
         title = title_element.get_text(strip=True)
     else:
-        # p.tit이 없으면 <a> 태그의 전체 텍스트를 제목으로 시도 (혹은 <a> 내부의 다른 제목 태그를 찾아야 함)
+        # p.tit이 없으면 <a> 태그의 모든 텍스트를 제목으로 간주
         title = first_article.get_text(strip=True)
 
     link = first_article['href']
     # 링크가 상대 경로일 경우 (예: /news/articleView.html?idxno=12345) 절대 경로로 변환
     if not link.startswith('http'):
         link = "https://www.fashionbiz.co.kr" + link
+    
+    print(f"DEBUG: Selected first article - Title: {title}, Link: {link}")
 
     # --- 기사 본문 셀렉터 ---
     # 이 부분은 여전히 직접 확인해야 합니다. 아래는 가장 흔한 예시입니다.
     # 실제 기사 페이지로 이동하여 본문 내용을 감싸는 정확한 태그/클래스/ID를 찾아야 합니다.
     article_response = requests.get(link)
     article_soup = BeautifulSoup(article_response.text, "html.parser")
+    print(f"DEBUG: Fetching article content from: {link}")
 
-    # 예시: 기사 본문이 'div#article-content' 또는 'div.article_body_content' 안에 있다고 가정
+    # 패션비즈 기사 본문 영역 셀렉터 (정확한 확인 필수!)
     content_element = article_soup.select_one("div#article-content") 
     if not content_element:
-        content_element = article_soup.select_one("div.article-view-content")
+        content_element = article_soup.select_one("div.article_body_content") 
         if not content_element:
-            content_element = article_soup.select_one("div.txt_view")
+            content_element = article_soup.select_one("div.view_txt")
             if not content_element:
-                raise Exception(f"기사 본문 내용을 찾을 수 없습니다: {link}. 실제 기사 페이지의 셀렉터를 확인하세요.")
+                content_element = article_soup.select_one("div.detail_view")
+                if not content_element:
+                    # 마지막으로, 가장 포괄적인 시도: <article> 태그나 본문처럼 보이는 div
+                    content_element = article_soup.find("article") 
+                    if not content_element:
+                        content_element = article_soup.find("div", class_=lambda x: x and ('content' in x or 'body' in x))
+                        if not content_element:
+                            raise Exception(f"기사 본문 내용을 찾을 수 없습니다: {link}. 실제 기사 페이지의 셀렉터를 확인하세요.")
 
     content = content_element.get_text(strip=True)
+    print(f"DEBUG: Article content successfully extracted (first 100 chars): {content[:100]}...")
 
     return title, link, content
 
