@@ -31,22 +31,33 @@ def fetch_news():
     # 1단계: '최신 기사' <h3> 태그를 찾습니다.
     latest_news_heading = soup.find("h3", string="최신 기사") 
     
-    articles = []
-    if latest_news_heading:
-        # 2단계: '최신 기사' heading 바로 다음 형제 요소인 div (기사 리스트 컨테이너)를 찾습니다.
-        # 캡쳐 화면에서 클래스가 'sc-221d63dd-2 cARbOc' 였지만, 동적 클래스이므로 find_next_sibling("div")를 사용합니다.
-        news_list_container = latest_news_heading.find_next_sibling("div")
-        
-        if news_list_container:
-            # 3단계: 컨테이너 안에서 각 기사 링크 (<a> 태그)를 찾습니다.
-            # 각 기사가 <div>로 감싸여 있고 그 안에 <a>가 있을 것으로 추정
-            # .sc-53c9553f-0 ksjQKq 는 각 기사 아이템 div의 클래스
-            articles = news_list_container.select("div.sc-53c9553f-0.ksjQKq > a") 
-            # 만약 위 셀렉터가 안된다면, 단순히 news_list_container.find_all("a") 로 시도해 볼 수 있습니다.
-            # articles = news_list_container.find_all("a") 
-            
-    if not articles:
-        raise Exception("패션비즈 웹사이트에서 기사를 찾을 수 없습니다. '최신 기사' 섹션 또는 기사 셀렉터 확인 필요.")
+   articles = []
+if latest_news_heading:
+    # 2단계: '최신 기사' heading 바로 다음 형제 요소인 div (기사 리스트 컨테이너)를 찾습니다.
+    # 이 div의 클래스명이 계속 변한다면, 클래스를 지정하지 않고 'div'만으로 찾거나,
+    # find_next_sibling()으로 찾은 뒤 그 객체 안에서 다시 탐색해야 합니다.
+    news_list_container = latest_news_heading.find_next_sibling("div")
+
+    if news_list_container:
+        # 3단계: 컨테이너 안에서 각 기사 링크 (<a> 태그)를 찾습니다.
+        # 여기가 가장 중요합니다. 이전에는 "div.sc-53c9553f-0.ksjQKq > a" 로 시도했지만,
+        # 이 클래스가 동적이라면 실패합니다.
+
+        # --- 시도 1: 컨테이너 내의 모든 <a> 태그 찾기 (가장 일반적인 방법) ---
+        articles = news_list_container.find_all("a", href=True) 
+
+        # --- 시도 2: 만약 <a> 태그가 어떤 특정 <div class="기사아이템"> 안에 있다면 ---
+        # 개발자 도구로 기사 하나를 클릭해서 가장 바깥쪽을 감싸는 div의 고정된 클래스가 있는지 확인
+        # 예시: articles = news_list_container.select("div.fixed-article-item-class > a")
+
+        # --- 시도 3: <a> 태그가 <p class="tit">과 같은 특정 제목 클래스를 포함한다면 ---
+        # articles = news_list_container.select("a:has(p.tit)") # CSS selector pseudo-class :has() 사용 (BeautifulSoup 4.7+에서 지원)
+        # 또는 각 <a>를 순회하며 내부 요소를 확인 (코드가 복잡해짐)
+
+if not articles:
+    # 이 예외가 발생한다는 것은 위 셀렉터들이 기사를 찾지 못했다는 의미
+    raise Exception("패션비즈 웹사이트에서 기사를 찾을 수 없습니다. '최신 기사' 섹션 또는 기사 셀렉터 확인 필요.")
+
 
     first_article = articles[0]
     
